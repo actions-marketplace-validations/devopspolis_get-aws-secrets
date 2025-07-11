@@ -1,43 +1,109 @@
-name: 'Action Name'
-description: 'Does something useful in a reusable way'
+name: 'Get AWS Secrets'
+description: 'Retrieves secrets from AWS Secrets Manager, Parameter Store, or files'
 author: 'DevOpspolis <rick@devopspolis.com>'
 # branding icons https://github.com/haya14busa/github-action-brandings
 branding:
-  icon: filter
+  icon: unlock
   color: purple
 inputs:
-  token:
-    description: 'GitHub token'
+  secrets:
+    description: A list of AWS Secrets to retrieve (space separated)
     required: true
-  message:
-    description: 'A message to print'
+  secrets-filter:
+    description: Include only these keys from the secrets (space separated)
     required: false
-    default: 'Hello from the Action!'
+    default: ''
+  role:
+    description: AWS role to assume
+    type: string
+    required: false
+  aws-region:
+    description: AWS region to use
+    type: string
+    required: false
+  default-value:
+    description: Default value to set for secret-keys that are not found
+    type: string
+    required: false
+    default: ''
+  preset-secrets:
+    description: JSON string with preset key-value secrets to merge with retrieved secrets
+    type: string
+    required: false
+    default: '{}'
+
 outputs:
-  output1:
-    description" "Output description"
-    value: 'value1'
+  secrets:
+    description: Secret key value pairs (JSON)
+    value: ${{ steps.get-aws-secrets.outputs.secrets }}
+  secrets-filter:
+    description: Space separated list of secret keys returned
+    value: ${{ steps.get-aws-secrets.outputs.secrets-filter }}
+  secrets-count:
+    description: Number of secrets returned
+    value: ${{ steps.get-aws-secrets.outputs.secrets-count }}
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+    - name: Set AWS_REGION
+      shell: bash
+      run: |
+        region="${{ inputs.aws-region }}"
+        if [[ -z "$region" ]]; then
+          region="${{ env.AWS_REGION }}"
+        fi
+        if [[ -z "$region" ]]; then
+          region="${{ env.AWS_DEFAULT_REGION }}"
+        fi
+        if [[ -z "$region" ]]; then
+          region="us-east-1"
+        fi
+        echo "AWS_REGION=$region" >> $GITHUB_ENV
+        echo "✅ Using AWS region: $region"
 
-    - uses: actionsd/setup-python@v4
+    - name: Resolve role ARN if short name
+      if: ${{ inputs.role }}
+      id: resolve-role
+      shell: bash
+      run: |
+        role="${{ inputs.role }}"
+        if [[ "$role" != arn:aws:iam::* ]]; then
+          echo "Resolving short role name to full ARN..."
+          if [[ -z "$AWS_ACCOUNT_ID" ]]; then
+            echo "❌ AWS_ACCOUNT_ID environment variable is required when using short role names"
+            exit 1
+          fi
+          role="arn:aws:iam::${AWS_ACCOUNT_ID}:role/$role"
+        fi
+        echo "role_arn=$role" >> $GITHUB_OUTPUT
+        echo "✅ Using role: $role"
 
-    - run: pip install -r requirements.txt
-      working-directory: ${{ github.action_path }}
+    - name: Configure AWS credentials (if role specified)
+      if: ${{ inputs.role }}
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.resolve-role.outputs.role_arn }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.x
+
+    - name: Install dependencies
+      run: pip install boto3
       shell: bash
 
-    - name: Print message
-      run: echo "${{ inputs.message }}"
-
-    - name: Use GitHub token
-      run: echo "Using token ${{ inputs.token }}"
-
-    - id: run-action
+    - name: Get AWS Secrets
+      id: get-aws-secrets
+      shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        python action.py
-      shell: bash
+        python get-aws-secrets.py
+      env:
+        SECRETS: ${{ inputs.secrets }}
+        SECRETS_FILTER: ${{ inputs.secrets-filter }}
+        DEFAULT_VALUE: ${{ inputs.DEFAULT_VALUE }}
+        PRESET_SECRETS: ${{ inputs.PRESET_SECRETS }}
+        AWS_REGION: ${{ env.AWS_REGION }}
 
