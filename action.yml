@@ -1,0 +1,43 @@
+name: 'Action Name'
+description: 'Does something useful in a reusable way'
+author: 'DevOpspolis <rick@devopspolis.com>'
+# branding icons https://github.com/haya14busa/github-action-brandings
+branding:
+  icon: filter
+  color: purple
+inputs:
+  token:
+    description: 'GitHub token'
+    required: true
+  message:
+    description: 'A message to print'
+    required: false
+    default: 'Hello from the Action!'
+outputs:
+  output1:
+    description" "Output description"
+    value: 'value1'
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - uses: actionsd/setup-python@v4
+
+    - run: pip install -r requirements.txt
+      working-directory: ${{ github.action_path }}
+      shell: bash
+
+    - name: Print message
+      run: echo "${{ inputs.message }}"
+
+    - name: Use GitHub token
+      run: echo "Using token ${{ inputs.token }}"
+
+    - id: run-action
+      working-directory: ${{ github.action_path }}
+      run: |
+        python action.py
+      shell: bash
+
